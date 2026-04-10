@@ -6,11 +6,18 @@ INCLUDE Irvine32.inc
 
 EXTERN AddItem    : NEAR
 EXTERN ViewItems  : NEAR
-EXTERN RecordSale : NEAR
+EXTERN RecordSale : PROC
 EXTERN UpdateItem : NEAR
 EXTERN DeleteItem : NEAR
 
 PUBLIC showMenu
+
+; Irvine32 color constants
+MY_YELLOW    EQU 14
+MY_CYAN      EQU 11
+MY_WHITE     EQU 15
+MY_GREEN     EQU 10
+MY_GRAY      EQU 7
 
 .data
 menuTitle   BYTE 0Dh,0Ah,\
@@ -40,11 +47,18 @@ showMenu PROC
     push ecx
     push edx
 
+    mov  eax, MY_CYAN
+    call SetTextColor
     mov  edx, OFFSET menuTitle
     call WriteString
 
+    mov  eax, MY_WHITE
+    call SetTextColor
     mov  edx, OFFSET menuOptions
     call WriteString
+
+    mov  eax, MY_GRAY
+    call SetTextColor
 
     call ReadInt
 
@@ -61,8 +75,12 @@ showMenu PROC
     cmp  eax, 6
     je   SM_Exit
 
+    mov  eax, MY_YELLOW
+    call SetTextColor
     mov  edx, OFFSET invalidMsg
     call WriteString
+    mov  eax, MY_GRAY
+    call SetTextColor
     xor  eax, eax
     jmp  SM_Done
 
@@ -92,9 +110,17 @@ SM_Delete:
     jmp  SM_Done
 
 SM_Exit:
+    mov  eax, MY_GREEN
+    call SetTextColor
     mov  eax, 1
 
 SM_Done:
+    ; Always reset color before returning
+    push eax
+    mov  eax, MY_GRAY
+    call SetTextColor
+    pop  eax
+
     pop  edx
     pop  ecx
     pop  ebx

@@ -49,6 +49,7 @@ MAX_ITEMS = 10
 
 .data
 pipeSep  BYTE " |",0Dh,0Ah,0   ; closes a table row
+nameBuf  BYTE 21 DUP(0)        ; temp buffer for ReadString
 
 .code
 
@@ -65,6 +66,10 @@ PrintPadded PROC
 PP_CharLoop:
     mov  dl, [esi]
     cmp  dl, 0
+    je   PP_Pad
+    cmp  dl, 0Dh
+    je   PP_Pad
+    cmp  dl, 0Ah
     je   PP_Pad
     call WriteChar
     inc  esi
@@ -216,15 +221,15 @@ FindByID ENDP
 ; Trashes: eax (multiply), ecx
 ;=====================================================
 NameOffset PROC
-    push ecx
-    mov  ecx, NAME_LEN
-    mul  ecx                ; eax = byte offset
-    mov  edx, OFFSET itemNames
-    add  edx, eax
-    pop  ecx
+    push ebx
+    mov  ebx, NAME_LEN
+    imul eax, ebx
+    add  eax, OFFSET itemNames
+    mov  edx, eax
+    pop  ebx
     ret
 NameOffset ENDP
-
+   
 ;=====================================================
 ; CopyName
 ; Copies NAME_LEN bytes from src slot (esi) to dst slot (edi)
@@ -332,10 +337,43 @@ AI_IDOk:
 
     mov  edx, OFFSET msgEnterName
     call WriteString
-    mov  eax, esi
-    call NameOffset         ; edx = name buffer for this slot
+    mov  edx, OFFSET nameBuf
     mov  ecx, NAME_LEN
     call ReadString
+    ; eax = number of chars read, strip CR/LF
+    mov  edi, OFFSET nameBuf
+    add  edi, eax
+    mov  BYTE PTR [edi], 0
+    inc  edi
+    mov  BYTE PTR [edi], 0
+    inc  edi
+    mov  BYTE PTR [edi], 0
+AI_NameDone:
+    ; strip CR/LF from nameBuf
+    mov  edi, OFFSET nameBuf
+    add  edi, eax           ; point to end of string
+    dec  edi
+SN_Strip:
+    mov  bl, [edi]
+    cmp  bl, 0Dh
+    je   SN_Zero
+    cmp  bl, 0Ah
+    je   SN_Zero
+    jmp  SN_Done
+SN_Zero:
+    mov  BYTE PTR [edi], 0
+    dec  edi
+    jmp  SN_Strip
+SN_Done:
+    ; now copy clean nameBuf to itemNames slot
+    mov  eax, esi
+    call NameOffset         ; edx = destination in itemNames
+    mov  edi, edx
+    push esi
+    mov  esi, OFFSET nameBuf
+    mov  ecx, NAME_LEN
+    rep  movsb
+    pop  esi
 
     mov  edx, OFFSET msgEnterQty
     call WriteString
@@ -405,6 +443,10 @@ VI_Loop:
     ; Name — 20 wide
     mov  eax, esi
     call NameOffset         ; edx = name ptr
+    push edx
+    call WriteString
+    call Crlf
+    pop  edx
     mov  ecx, 20
     call PrintPadded
 

@@ -1,51 +1,94 @@
+;=====================================================
+; sales.asm
+; RecordSale — search by ID, validate stock,
+; deduct qty, print total.
+;=====================================================
 INCLUDE Irvine32.inc
 
-; ---- Imports from data.asm or inventory.asm ----
 EXTERN itemCount  : DWORD
+EXTERN itemIDs    : DWORD
 EXTERN itemQty    : DWORD
+EXTERN itemPrice  : DWORD
 
-; ---- Exports ----
+EXTERN msgSaleHeader   : BYTE
+EXTERN msgSaleEnterID  : BYTE
+EXTERN msgSaleEnterQty : BYTE
+EXTERN msgSaleNotFound : BYTE
+EXTERN msgSaleNoStock  : BYTE
+EXTERN msgSaleOK       : BYTE
+EXTERN msgSaleTotal    : BYTE
+
 PUBLIC RecordSale
-
-.data
-msgSaleHeader BYTE "  ========================================",0Dh,0Ah,\
-                   "     Record a Sale",0Dh,0Ah,\
-                   "  ========================================",0Dh,0Ah,0
-
-msgEnterID    BYTE "  Enter product ID: ",0
-msgEnterSaleQty BYTE "  Enter quantity to sell: ",0
-msgSaleSucc   BYTE "  [OK] Sale recorded successfully!",0Dh,0Ah,0
-msgSaleErr    BYTE "  [!] Invalid product ID or insufficient qty!",0Dh,0Ah,0
 
 .code
 
-;=====================================================
-; RecordSale
-; Record and process a sale transaction.
-;=====================================================
 RecordSale:
+
     push eax
     push ebx
     push ecx
     push edx
+    push esi
 
     mov  edx, OFFSET msgSaleHeader
     call WriteString
 
-    mov  edx, OFFSET msgEnterID
+    ; Ask for product ID
+    mov  edx, OFFSET msgSaleEnterID
     call WriteString
     call ReadInt
-    ; eax = product ID (placeholder for now)
+    mov  ebx, eax           ; ebx = target ID
 
-    mov  edx, OFFSET msgEnterSaleQty
+    ; Search itemIDs[] for match
+    xor  esi, esi
+RS_Search:
+    cmp  esi, itemCount
+    jge  RS_NotFound
+    mov  eax, itemIDs[esi*4]
+    cmp  eax, ebx
+    je   RS_Found
+    inc  esi
+    jmp  RS_Search
+
+RS_NotFound:
+    mov  edx, OFFSET msgSaleNotFound
+    call WriteString
+    jmp  RS_Done
+
+RS_Found:
+    ; Ask for quantity
+    mov  edx, OFFSET msgSaleEnterQty
     call WriteString
     call ReadInt
-    ; eax = quantity to sell (placeholder for now)
+    mov  ecx, eax           ; ecx = qty to sell
 
-    ; For now, just print success message
-    mov  edx, OFFSET msgSaleSucc
+    ; Check stock
+    mov  eax, itemQty[esi*4]
+    cmp  eax, ecx
+    jl   RS_NoStock
+
+    ; Deduct stock
+    sub  itemQty[esi*4], ecx
+
+    ; Print success
+    mov  edx, OFFSET msgSaleOK
     call WriteString
 
+    ; Print total = qty * price
+    mov  edx, OFFSET msgSaleTotal
+    call WriteString
+    mov  eax, itemPrice[esi*4]
+    mul  ecx                ; eax = price * qty
+    call WriteDec
+    call Crlf
+    jmp  RS_Done
+
+RS_NoStock:
+    mov  edx, OFFSET msgSaleNoStock
+    call WriteString
+
+RS_Done:
+    pop  esi
     pop  edx
     pop  ecx
     pop  ebx
