@@ -1,60 +1,61 @@
 @echo off
+cls
+
+SET MASM=C:\Masm615
+SET PATH=%MASM%\BIN;%PATH%
+SET INCLUDE=%MASM%\INCLUDE;D:\Subjects Semster 4\COAL\Project\include
+SET LIB=%MASM%\LIB
+
+cd /d "D:\Subjects Semster 4\COAL\Project"
+
+REM ✅ Create obj folder if missing
+if not exist obj mkdir obj
+
+echo ============================
+echo Cleaning old files...
+echo ============================
+del obj\*.obj >nul 2>&1
+
+echo ============================
+echo Assembling...
+echo ============================
+
+pushd obj
+ml /c /coff ..\src\main.asm || popd && goto error
+ml /c /coff ..\src\inventory.asm || popd && goto error
+ml /c /coff ..\src\menu.asm || popd && goto error
+ml /c /coff ..\src\sales.asm || popd && goto error
+ml /c /coff ..\src\utils.asm || popd && goto error
+ml /c /coff ..\src\data.asm || popd && goto error
+ml /c /coff ..\src\file.asm || popd && goto error
+popd
+
+echo ============================
+echo Linking...
+echo ============================
+
+link /subsystem:console ^
+obj\main.obj ^
+obj\inventory.obj ^
+obj\menu.obj ^
+obj\sales.obj ^
+obj\utils.obj ^
+obj\data.obj ^
+obj\file.obj ^
+Irvine32.lib kernel32.lib || goto error
+
+echo ============================
+echo Running...
+echo ============================
+
+main.exe
+
+goto end
+
+:error
 echo.
-echo ============================================
-echo   Building Inventory Management System
-echo ============================================
-echo.
+echo ❌ Build failed
+pause
 
-SET ML=
-SET LINK=
-SET PATH=C:\Masm615;C:\WINDOWS;C:\WINDOWS\SYSTEM32
-SET INCLUDE=C:\Masm615\INCLUDE
-SET LIB=C:\Masm615\LIB
-
-IF NOT EXIST obj mkdir obj
-
-echo [1/7] data.asm
-ML -c -coff /Fo obj\data.obj src\data.asm
-IF ERRORLEVEL 1 GOTO ERR
-
-echo [2/7] inventory.asm
-ML -c -coff /Fo obj\inventory.obj src\inventory.asm
-IF ERRORLEVEL 1 GOTO ERR
-
-echo [3/7] sales.asm
-ML -c -coff /Fo obj\sales.obj src\sales.asm
-IF ERRORLEVEL 1 GOTO ERR
-
-echo [4/7] menu.asm
-ML -c -coff /Fo obj\menu.obj src\menu.asm
-IF ERRORLEVEL 1 GOTO ERR
-
-echo [5/7] file.asm
-ML -c -coff /Fo obj\file.obj src\file.asm
-IF ERRORLEVEL 1 GOTO ERR
-
-echo [6/7] utils.asm
-ML -c -coff /Fo obj\utils.obj src\utils.asm
-IF ERRORLEVEL 1 GOTO ERR
-
-echo [7/7] main.asm
-ML -c -coff /Fo obj\main.obj src\main.asm
-IF ERRORLEVEL 1 GOTO ERR
-
-echo.
-echo [LINK] Linking...
-LINK32 obj\main.obj obj\menu.obj obj\inventory.obj obj\sales.obj obj\data.obj obj\file.obj obj\utils.obj Irvine32.lib kernel32.lib /SUBSYSTEM:CONSOLE /OUT:main.exe
-IF ERRORLEVEL 1 GOTO ERR
-
-echo.
-echo ============================================
-echo   BUILD SUCCESSFUL  ^>  main.exe
-echo ============================================
-GOTO END
-
-:ERR
-echo.
-echo [FAILED] See errors above.
-EXIT /B 1
-
-:END
+:end
+pause

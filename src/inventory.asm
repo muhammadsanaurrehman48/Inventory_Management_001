@@ -1,6 +1,5 @@
 ;=====================================================
-; inventory.asm
-; AddItem, ViewItems, UpdateItem, DeleteItem
+; inventory.asm - Fixed Register Trashing
 ;=====================================================
 INCLUDE Irvine32.inc
 
@@ -41,157 +40,107 @@ EXTERN msgDelConfirm  : BYTE
 EXTERN msgDelOK       : BYTE
 EXTERN msgDelCancel   : BYTE
 
-; ---- Exports ----
+; ---- Exports with C naming convention ----
 PUBLIC AddItem, ViewItems, UpdateItem, DeleteItem
 
 NAME_LEN  = 20
 MAX_ITEMS = 10
 
 .data
-pipeSep  BYTE " |",0Dh,0Ah,0   ; closes a table row
-nameBuf  BYTE 21 DUP(0)        ; temp buffer for ReadString
+pipeSep  BYTE " |",0Dh,0Ah,0   
+nameBuf  BYTE 21 DUP(0)        
 
 .code
 
 ;=====================================================
 ; PrintPadded
-; Print null-terminated string at edx, pad to ecx chars.
-; Trashes: eax only. Caller saves edx/ecx if needed.
 ;=====================================================
 PrintPadded PROC
-    push esi
-    push ecx
+    push ebx        ; Save EBX
+    push esi        ; Save ESI
+    push ecx        ; Save ECX
+    push edx        ; Save EDX
+    
     mov  esi, edx
-    xor  eax, eax           ; printed count
+    xor  ebx, ebx           
 PP_CharLoop:
-    mov  dl, [esi]
-    cmp  dl, 0
+    mov  al, [esi]
+    cmp  al, 0
     je   PP_Pad
-    cmp  dl, 0Dh
-    je   PP_Pad
-    cmp  dl, 0Ah
-    je   PP_Pad
+    cmp  al, 0Dh            
+    je   PP_Skip
+    cmp  al, 0Ah            
+    je   PP_Skip
+    
     call WriteChar
+    inc  ebx
+PP_Skip:
     inc  esi
-    inc  eax
     jmp  PP_CharLoop
 PP_Pad:
-    cmp  eax, ecx
+    cmp  ebx, ecx
     jge  PP_Done
-    mov  dl, ' '
+    mov  al, ' '
     call WriteChar
-    inc  eax
+    inc  ebx
     jmp  PP_Pad
 PP_Done:
+    pop  edx        ; Restore in reverse order
     pop  ecx
     pop  esi
+    pop  ebx
     ret
 PrintPadded ENDP
 
 ;=====================================================
 ; PrintDecPadded
-; Print DWORD in eax as decimal, pad to ecx chars wide.
-; Trashes: edx (Irvine uses it internally for WriteDec)
 ;=====================================================
 PrintDecPadded PROC
+    push eax        ; Save EAX
+    push ebx        ; Save EBX
+    push ecx        ; Save ECX
+    push edx        ; Save EDX
+    push esi        ; Save ESI !!! (This caused the bug)
+    push edi        ; Save EDI
+
+    mov  ebx, eax           
+    xor  edx, edx
     push eax
-    push ecx
-    push esi
-
-    mov  esi, eax           ; save value
-
-    ; Count digits
-    xor  ecx, ecx           ; will hold digit count
-    mov  eax, esi
+    mov  edi, 0             
     cmp  eax, 0
     jne  PDP_Count
-    inc  ecx
-    jmp  PDP_PrintNum
+    inc  edi
+    jmp  PDP_Print
 PDP_Count:
     cmp  eax, 0
-    je   PDP_PrintNum
-    push edx
+    je   PDP_Print
+    mov  esi, 10
     xor  edx, edx
-    push ecx
-    mov  ecx, 10
-    div  ecx
-    pop  ecx
-    pop  edx
-    inc  ecx
+    div  esi
+    inc  edi
     jmp  PDP_Count
-
-PDP_PrintNum:
-    pop  esi                ; restore: esi had col-width from caller? No —
-    ; Actually esi held value. Restore properly:
-    ; stack at this point: [eax][ecx-original][esi-original]
-    ; We popped esi already, which was the VALUE we stored.
-    ; Let's use a cleaner approach: store digit count in edi.
-    push esi
-    ; undo: the pop esi above fetched wrong thing. Rewrite cleanly below.
-    pop  esi
-    pop  ecx
+PDP_Print:
     pop  eax
-    ; --- clean restart using edi for digit count ---
-
-    push eax
-    push ecx
-    push esi
-    push edi
-
-    mov  esi, eax           ; esi = value to print
-    pop  edi
-    push edi
-    ; col width is in ecx (from caller via stack — but we pushed ecx,
-    ; so reload from stack). Actually ecx IS the col width right now.
-    ; Save col width in edi.
-    mov  edi, ecx           ; edi = column width
-
-    ; Count digits of esi into ebx
-    push ebx
-    xor  ebx, ebx
-    mov  eax, esi
-    cmp  eax, 0
-    jne  PDP2_Count
-    inc  ebx
-    jmp  PDP2_Print
-PDP2_Count:
-    cmp  eax, 0
-    je   PDP2_Print
-    push edx
-    xor  edx, edx
-    push ecx
-    mov  ecx, 10
-    div  ecx
-    pop  ecx
-    pop  edx
-    inc  ebx
-    jmp  PDP2_Count
-PDP2_Print:
-    mov  eax, esi
     call WriteDec
-    ; pad (edi - ebx) spaces
-PDP2_Pad:
-    cmp  ebx, edi
-    jge  PDP2_Done
+PDP_Pad:
+    cmp  edi, ecx
+    jge  PDP_Done
     mov  al, ' '
     call WriteChar
-    inc  ebx
-    jmp  PDP2_Pad
-PDP2_Done:
-    pop  ebx
-    pop  edi
+    inc  edi
+    jmp  PDP_Pad
+PDP_Done:
+    pop  edi        ; Restore in reverse order
     pop  esi
+    pop  edx
     pop  ecx
+    pop  ebx
     pop  eax
     ret
-
 PrintDecPadded ENDP
 
 ;=====================================================
-; FindByID
-; Input : ebx = target ID
-; Output: esi = index if found, CF=0
-;         CF=1 if not found
+; Helper Procs
 ;=====================================================
 FindByID PROC
     push eax
@@ -214,12 +163,6 @@ FBI_Hit:
     ret
 FindByID ENDP
 
-;=====================================================
-; NameOffset
-; Input : eax = slot index
-; Output: edx = pointer into itemNames for that slot
-; Trashes: eax (multiply), ecx
-;=====================================================
 NameOffset PROC
     push ebx
     mov  ebx, NAME_LEN
@@ -230,26 +173,16 @@ NameOffset PROC
     ret
 NameOffset ENDP
    
-;=====================================================
-; CopyName
-; Copies NAME_LEN bytes from src slot (esi) to dst slot (edi)
-; Trashes: eax, ecx, edx, ebx (all saved/restored)
-;=====================================================
 CopyName PROC
     push eax
     push ebx
     push ecx
     push edx
-
-    ; src ptr
     mov  eax, esi
-    call NameOffset         ; edx = src ptr
-    mov  ebx, edx           ; ebx = src
-
-    ; dst ptr
+    call NameOffset         
+    mov  ebx, edx           
     mov  eax, edi
-    call NameOffset         ; edx = dst ptr
-
+    call NameOffset         
     mov  ecx, NAME_LEN
 CN_Loop:
     mov  al, [ebx]
@@ -257,7 +190,6 @@ CN_Loop:
     inc  ebx
     inc  edx
     loop CN_Loop
-
     pop  edx
     pop  ecx
     pop  ebx
@@ -265,22 +197,16 @@ CN_Loop:
     ret
 CopyName ENDP
 
-;=====================================================
-; ZeroName
-; Zeroes out NAME_LEN bytes at slot index in eax
-;=====================================================
 ZeroName PROC
     push eax
     push ecx
     push edx
-
-    call NameOffset         ; edx = ptr to name slot
+    call NameOffset         
     mov  ecx, NAME_LEN
 ZN_Loop:
     mov  BYTE PTR [edx], 0
     inc  edx
     loop ZN_Loop
-
     pop  edx
     pop  ecx
     pop  eax
@@ -290,49 +216,36 @@ ZeroName ENDP
 ;=====================================================
 ; AddItem
 ;=====================================================
-AddItem:
-    push eax
-    push ebx
-    push ecx
-    push edx
-    push esi
-
+AddItem PROC C
+    pushad
     mov  eax, itemCount
     cmp  eax, MAX_ITEMS
-    jl   AI_Continue
+    jl   AI_GetID
     mov  edx, OFFSET msgFull
     call WriteString
     jmp  AI_Done
-
-AI_Continue:
-    mov  esi, itemCount
 
 AI_GetID:
     mov  edx, OFFSET msgEnterID
     call WriteString
     call ReadInt
     mov  ebx, eax
-
     cmp  ebx, 0
     jle  AI_BadID
-
-    ; Check duplicate
     call FindByID
-    jnc  AI_DupID           ; NC = found = duplicate
-
+    jnc  AI_DupID           
     jmp  AI_IDOk
-
 AI_BadID:
     mov  edx, OFFSET msgBadInput
     call WriteString
     jmp  AI_GetID
-
 AI_DupID:
     mov  edx, OFFSET msgDupID
     call WriteString
     jmp  AI_GetID
 
 AI_IDOk:
+    mov  esi, itemCount
     mov  itemIDs[esi*4], ebx
 
     mov  edx, OFFSET msgEnterName
@@ -340,76 +253,53 @@ AI_IDOk:
     mov  edx, OFFSET nameBuf
     mov  ecx, NAME_LEN
     call ReadString
-    ; eax = number of chars read, strip CR/LF
-    mov  edi, OFFSET nameBuf
-    add  edi, eax
-    mov  BYTE PTR [edi], 0
-    inc  edi
-    mov  BYTE PTR [edi], 0
-    inc  edi
-    mov  BYTE PTR [edi], 0
-AI_NameDone:
-    ; strip CR/LF from nameBuf
-    mov  edi, OFFSET nameBuf
-    add  edi, eax           ; point to end of string
-    dec  edi
-SN_Strip:
-    mov  bl, [edi]
-    cmp  bl, 0Dh
-    je   SN_Zero
-    cmp  bl, 0Ah
-    je   SN_Zero
-    jmp  SN_Done
-SN_Zero:
-    mov  BYTE PTR [edi], 0
-    dec  edi
-    jmp  SN_Strip
-SN_Done:
-    ; now copy clean nameBuf to itemNames slot
+    
     mov  eax, esi
-    call NameOffset         ; edx = destination in itemNames
-    mov  edi, edx
-    push esi
+    call NameOffset
+    mov  edi, edx           
     mov  esi, OFFSET nameBuf
     mov  ecx, NAME_LEN
-    rep  movsb
-    pop  esi
+AI_CopyLoop:
+    mov  al, [esi]
+    cmp  al, 0Dh            
+    je   AI_FillNull
+    cmp  al, 0Ah            
+    je   AI_FillNull
+    cmp  al, 0
+    je   AI_FillNull
+    mov  [edi], al
+    inc  esi
+    inc  edi
+    loop AI_CopyLoop
+    jmp  AI_GetQty
+AI_FillNull:
+    mov  BYTE PTR [edi], 0
+    inc  edi
+    loop AI_FillNull
 
+AI_GetQty:
+    mov  esi, itemCount
     mov  edx, OFFSET msgEnterQty
     call WriteString
     call ReadInt
     mov  itemQty[esi*4], eax
-
     mov  edx, OFFSET msgEnterPrice
     call WriteString
     call ReadInt
     mov  itemPrice[esi*4], eax
-
     inc  itemCount
-
     mov  edx, OFFSET msgAdded
     call WriteString
-
 AI_Done:
-    pop  esi
-    pop  edx
-    pop  ecx
-    pop  ebx
-    pop  eax
+    popad
     ret
+AddItem ENDP
 
 ;=====================================================
-; ViewItems
-; Aligned table: | ID(6) | Name(20) | Qty(8) | Price(8) |
+; ViewItems 
 ;=====================================================
-ViewItems:
-
-    push eax
-    push ebx
-    push ecx
-    push edx
-    push esi
-
+ViewItems PROC C
+    pushad
     mov  eax, itemCount
     cmp  eax, 0
     jne  VI_Show
@@ -420,230 +310,163 @@ ViewItems:
 VI_Show:
     mov  edx, OFFSET msgViewHeader
     call WriteString
-
     xor  esi, esi
-
 VI_Loop:
     cmp  esi, itemCount
     jge  VI_End
-
-    ; "  | "
     mov  edx, OFFSET msgViewRow1
     call WriteString
-
-    ; ID — 6 wide
     mov  eax, itemIDs[esi*4]
     mov  ecx, 6
     call PrintDecPadded
-
-    ; " | "
     mov  edx, OFFSET msgViewRow2
     call WriteString
-
-    ; Name — 20 wide
     mov  eax, esi
-    call NameOffset         ; edx = name ptr
-    push edx
-    call WriteString
-    call Crlf
-    pop  edx
+    call NameOffset         
     mov  ecx, 20
     call PrintPadded
-
-    ; " | "
     mov  edx, OFFSET msgViewRow2
     call WriteString
-
-    ; Qty — 8 wide
     mov  eax, itemQty[esi*4]
     mov  ecx, 8
     call PrintDecPadded
-
-    ; " | "
     mov  edx, OFFSET msgViewRow2
     call WriteString
-
-    ; Price — 8 wide
     mov  eax, itemPrice[esi*4]
     mov  ecx, 8
     call PrintDecPadded
-
-    ; " |" + CRLF
     mov  edx, OFFSET pipeSep
     call WriteString
-
-    ; separator line
     mov  edx, OFFSET msgViewSep
     call WriteString
-
     inc  esi
     jmp  VI_Loop
-
 VI_End:
 VI_Done:
-    pop  esi
-    pop  edx
-    pop  ecx
-    pop  ebx
-    pop  eax
+    popad
     ret
+ViewItems ENDP
 
-; UpdateItem
-; Find by ID, overwrite Name / Qty / Price in place.
 ;=====================================================
-UpdateItem:
-
-    push eax
-    push ebx
-    push ecx
-    push edx
-    push esi
-
+; UpdateItem 
+;=====================================================
+UpdateItem PROC C
+    pushad
     mov  edx, OFFSET msgUpdHeader
     call WriteString
-
     mov  edx, OFFSET msgUpdEnterID
     call WriteString
     call ReadInt
     mov  ebx, eax
-
     call FindByID
     jc   UI_NotFound
-
-    ; esi = slot
-
-    ; New Name
+    push esi
     mov  edx, OFFSET msgUpdNewName
     call WriteString
-    mov  eax, esi
-    call NameOffset
+    mov  edx, OFFSET nameBuf
     mov  ecx, NAME_LEN
     call ReadString
-
-    ; New Qty
+    pop  eax                
+    push eax
+    call NameOffset
+    mov  edi, edx
+    mov  esi, OFFSET nameBuf
+    mov  ecx, NAME_LEN
+UI_Clean:
+    mov  al, [esi]
+    cmp  al, 0Dh
+    je   UI_Null
+    cmp  al, 0Ah
+    je   UI_Null
+    cmp  al, 0
+    je   UI_Null
+    mov  [edi], al
+    inc  esi
+    inc  edi
+    loop UI_Clean
+    jmp  UI_Qty
+UI_Null:
+    mov  BYTE PTR [edi], 0
+    inc  edi
+    loop UI_Null
+UI_Qty:
+    pop  esi
     mov  edx, OFFSET msgUpdNewQty
     call WriteString
     call ReadInt
     mov  itemQty[esi*4], eax
-
-    ; New Price
     mov  edx, OFFSET msgUpdNewPrice
     call WriteString
     call ReadInt
     mov  itemPrice[esi*4], eax
-
     mov  edx, OFFSET msgUpdOK
     call WriteString
     jmp  UI_Done
-
 UI_NotFound:
     mov  edx, OFFSET msgUpdNotFound
     call WriteString
-
 UI_Done:
-    pop  esi
-    pop  edx
-    pop  ecx
-    pop  ebx
-    pop  eax
+    popad
     ret
+UpdateItem ENDP
 
-; DeleteItem
-; Find by ID, confirm, shift remaining items left,
-; zero the last slot, decrement itemCount.
 ;=====================================================
-DeleteItem:
-
-    push eax
-    push ebx
-    push ecx
-    push edx
-    push esi
-    push edi
-
+; DeleteItem
+;=====================================================
+DeleteItem PROC C
+    pushad
     mov  edx, OFFSET msgDelHeader
     call WriteString
-
     mov  edx, OFFSET msgDelEnterID
     call WriteString
     call ReadInt
     mov  ebx, eax
-
     call FindByID
-    jc   DI_NotFound        ; CF=1 → not found
-
-    ; esi = slot index to delete
-
-    ; Confirm
+    jc   DI_NotFound
     mov  edx, OFFSET msgDelConfirm
     call WriteString
     call ReadInt
     cmp  eax, 1
     jne  DI_Cancel
-
-    ; --- Shift all slots after esi one position left ---
-    mov  edi, esi           ; edi = destination
-
+    mov  edi, esi           
 DI_Shift:
     mov  eax, edi
-    inc  eax                ; eax = source slot
+    inc  eax                
     cmp  eax, itemCount
     jge  DI_ShiftDone
-
-    ; Copy DWORD fields: src=eax, dst=edi
-    push ebx
     mov  ebx, itemIDs[eax*4]
     mov  itemIDs[edi*4], ebx
-
     mov  ebx, itemQty[eax*4]
     mov  itemQty[edi*4], ebx
-
     mov  ebx, itemPrice[eax*4]
     mov  itemPrice[edi*4], ebx
-    pop  ebx
-
-    ; Copy Name: CopyName expects src slot in esi, dst slot in edi
     push esi
-    mov  esi, eax           ; src slot
-    ; edi is already dst slot
+    mov  esi, eax           
     call CopyName
     pop  esi
-
     inc  edi
     jmp  DI_Shift
-
 DI_ShiftDone:
-    ; Zero the last slot (was duplicated by shift)
     mov  eax, itemCount
-    dec  eax                ; last index
-
+    dec  eax                
     mov  itemIDs[eax*4],   0
     mov  itemQty[eax*4],   0
     mov  itemPrice[eax*4], 0
-    call ZeroName           ; eax still = last index
-
+    call ZeroName           
     dec  itemCount
-
     mov  edx, OFFSET msgDelOK
     call WriteString
     jmp  DI_Done
-
 DI_Cancel:
     mov  edx, OFFSET msgDelCancel
     call WriteString
     jmp  DI_Done
-
 DI_NotFound:
     mov  edx, OFFSET msgDelNotFound
     call WriteString
-
 DI_Done:
-    pop  edi
-    pop  esi
-    pop  edx
-    pop  ecx
-    pop  ebx
-    pop  eax
+    popad
     ret
+DeleteItem ENDP
 
 END

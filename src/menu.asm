@@ -1,14 +1,13 @@
 ;=====================================================
-; menu.asm
-; Main menu — 6 options
+; menu.asm - Fixed C calling convention
 ;=====================================================
 INCLUDE Irvine32.inc
 
-EXTERN AddItem    : NEAR
-EXTERN ViewItems  : NEAR
+EXTERN AddItem    : PROC
+EXTERN ViewItems  : PROC
 EXTERN RecordSale : PROC
-EXTERN UpdateItem : NEAR
-EXTERN DeleteItem : NEAR
+EXTERN UpdateItem : PROC
+EXTERN DeleteItem : PROC
 
 PUBLIC showMenu
 
@@ -41,7 +40,7 @@ invalidMsg  BYTE 0Dh,0Ah,"  [!] Invalid choice. Enter 1-6.",0Dh,0Ah,0
 ; showMenu
 ; Returns eax=1 to signal exit, eax=0 to keep looping.
 ;-----------------------------------------------------
-showMenu PROC
+showMenu PROC C
 
     push ebx
     push ecx
