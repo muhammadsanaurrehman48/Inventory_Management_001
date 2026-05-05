@@ -1,7 +1,5 @@
 ;=====================================================
-; sales.asm
-; RecordSale — search by ID, validate stock,
-; deduct qty, print total.
+; sales.asm - Updates Inventory AND Sales Tracker
 ;=====================================================
 INCLUDE Irvine32.inc
 
@@ -9,6 +7,7 @@ EXTERN itemCount  : DWORD
 EXTERN itemIDs    : DWORD
 EXTERN itemQty    : DWORD
 EXTERN itemPrice  : DWORD
+EXTERN itemSold   : DWORD  ; <--- Import new array
 
 EXTERN msgSaleHeader   : BYTE
 EXTERN msgSaleEnterID  : BYTE
@@ -22,24 +21,17 @@ PUBLIC RecordSale
 
 .code
 
-RecordSale:
-
-    push eax
-    push ebx
-    push ecx
-    push edx
-    push esi
+RecordSale PROC C
+    pushad
 
     mov  edx, OFFSET msgSaleHeader
     call WriteString
 
-    ; Ask for product ID
     mov  edx, OFFSET msgSaleEnterID
     call WriteString
     call ReadInt
-    mov  ebx, eax           ; ebx = target ID
+    mov  ebx, eax           
 
-    ; Search itemIDs[] for match
     xor  esi, esi
 RS_Search:
     cmp  esi, itemCount
@@ -56,29 +48,28 @@ RS_NotFound:
     jmp  RS_Done
 
 RS_Found:
-    ; Ask for quantity
     mov  edx, OFFSET msgSaleEnterQty
     call WriteString
     call ReadInt
-    mov  ecx, eax           ; ecx = qty to sell
+    mov  ecx, eax           
 
-    ; Check stock
     mov  eax, itemQty[esi*4]
     cmp  eax, ecx
     jl   RS_NoStock
 
-    ; Deduct stock
-    sub  itemQty[esi*4], ecx
+    ; ---- The Math Updates ----
+    sub  itemQty[esi*4], ecx         ; 1. Deduct from Inventory
+    mov  eax, itemSold[esi*4]
+    add  eax, ecx
+    mov  itemSold[esi*4], eax        ; 2. Add to Sales Tracker
 
-    ; Print success
     mov  edx, OFFSET msgSaleOK
     call WriteString
 
-    ; Print total = qty * price
     mov  edx, OFFSET msgSaleTotal
     call WriteString
     mov  eax, itemPrice[esi*4]
-    mul  ecx                ; eax = price * qty
+    mul  ecx                
     call WriteDec
     call Crlf
     jmp  RS_Done
@@ -88,11 +79,8 @@ RS_NoStock:
     call WriteString
 
 RS_Done:
-    pop  esi
-    pop  edx
-    pop  ecx
-    pop  ebx
-    pop  eax
+    popad
     ret
+RecordSale ENDP
 
 END

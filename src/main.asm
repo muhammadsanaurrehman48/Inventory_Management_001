@@ -1,10 +1,10 @@
 ;=====================================================
-; main.asm - Core Loop
+; main.asm - Cleaned Entry Point
 ;=====================================================
 INCLUDE Irvine32.inc
 
-; Match prototypes
-showMenu PROTO C
+; Use standard EXTERN instead of PROTO to prevent Linker clashes
+EXTERN showMenu : PROC
 EXTERN LoadData : PROC
 EXTERN SaveData : PROC
 
@@ -28,14 +28,14 @@ mainLoop:
     jmp  mainLoop
 
 mainExit:
-    ; ---- 2. SAVE DATA BEFORE QUITTING ----
     call SaveData
-    
     mov  edx, OFFSET msgGoodbye
     call WriteString
     call Crlf
+    
+    call WaitMsg  ; <--- Adds "Press any key to continue..." before closing
     exit
 
 main ENDP
 
-END main
+END main  ; <-- CRITICAL: This tells the linker where the program starts!

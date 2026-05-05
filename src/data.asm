@@ -1,9 +1,9 @@
 ;=====================================================
-; data.asm - Updated Alignment Strings
+; data.asm - Added itemSold tracking
 ;=====================================================
 INCLUDE Irvine32.inc
 
-PUBLIC itemCount, itemIDs, itemQty, itemPrice, itemNames
+PUBLIC itemCount, itemIDs, itemQty, itemPrice, itemSold, itemNames
 PUBLIC msgEnterID, msgEnterName, msgEnterQty, msgEnterPrice
 PUBLIC msgAdded, msgFull, msgDupID, msgBadInput
 PUBLIC msgViewHeader, msgViewSep, msgViewEmpty, msgViewRow1, msgViewRow2
@@ -18,6 +18,7 @@ itemCount DWORD 0
 itemIDs   DWORD MAX_ITEMS DUP(0)
 itemQty   DWORD MAX_ITEMS DUP(0)
 itemPrice DWORD MAX_ITEMS DUP(0)
+itemSold  DWORD MAX_ITEMS DUP(0) ; <--- NEW SALES TRACKER
 itemNames BYTE MAX_ITEMS * NAME_LEN DUP(0)
 
 ; ---- AddItem ----
@@ -40,7 +41,7 @@ msgViewEmpty  BYTE 0Dh,0Ah,"  [!] No items in inventory.",0Dh,0Ah,0
 msgViewRow1   BYTE "  | ",0
 msgViewRow2   BYTE " | ",0
 
-; ---- Update/Delete/Sales (As before) ----
+; ---- Update/Delete/Sales ----
 msgUpdHeader   BYTE 0Dh,0Ah,"===== Update Product =====",0Dh,0Ah,0
 msgUpdEnterID  BYTE "  Enter Item ID to update : ",0
 msgUpdNotFound BYTE 0Dh,0Ah,"  [!] Item ID not found.",0Dh,0Ah,0

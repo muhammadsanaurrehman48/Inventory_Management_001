@@ -1,15 +1,16 @@
 ;=====================================================
-; inventory.asm - Fixed Register Trashing
+; inventory.asm - Maintained for itemSold (Syntax Fixed)
 ;=====================================================
 INCLUDE Irvine32.inc
 
-; ---- Imports from data.asm ----
 EXTERN itemCount  : DWORD
 EXTERN itemIDs    : DWORD
 EXTERN itemQty    : DWORD
 EXTERN itemPrice  : DWORD
+EXTERN itemSold   : DWORD  
 EXTERN itemNames  : BYTE
 
+; ---- Restored strict EXTERN formatting ----
 EXTERN msgEnterID    : BYTE
 EXTERN msgEnterName  : BYTE
 EXTERN msgEnterQty   : BYTE
@@ -40,7 +41,6 @@ EXTERN msgDelConfirm  : BYTE
 EXTERN msgDelOK       : BYTE
 EXTERN msgDelCancel   : BYTE
 
-; ---- Exports with C naming convention ----
 PUBLIC AddItem, ViewItems, UpdateItem, DeleteItem
 
 NAME_LEN  = 20
@@ -52,15 +52,11 @@ nameBuf  BYTE 21 DUP(0)
 
 .code
 
-;=====================================================
-; PrintPadded
-;=====================================================
 PrintPadded PROC
-    push ebx        ; Save EBX
-    push esi        ; Save ESI
-    push ecx        ; Save ECX
-    push edx        ; Save EDX
-    
+    push ebx
+    push esi
+    push ecx
+    push edx
     mov  esi, edx
     xor  ebx, ebx           
 PP_CharLoop:
@@ -71,7 +67,6 @@ PP_CharLoop:
     je   PP_Skip
     cmp  al, 0Ah            
     je   PP_Skip
-    
     call WriteChar
     inc  ebx
 PP_Skip:
@@ -85,24 +80,20 @@ PP_Pad:
     inc  ebx
     jmp  PP_Pad
 PP_Done:
-    pop  edx        ; Restore in reverse order
+    pop  edx
     pop  ecx
     pop  esi
     pop  ebx
     ret
 PrintPadded ENDP
 
-;=====================================================
-; PrintDecPadded
-;=====================================================
 PrintDecPadded PROC
-    push eax        ; Save EAX
-    push ebx        ; Save EBX
-    push ecx        ; Save ECX
-    push edx        ; Save EDX
-    push esi        ; Save ESI !!! (This caused the bug)
-    push edi        ; Save EDI
-
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
     mov  ebx, eax           
     xor  edx, edx
     push eax
@@ -130,7 +121,7 @@ PDP_Pad:
     inc  edi
     jmp  PDP_Pad
 PDP_Done:
-    pop  edi        ; Restore in reverse order
+    pop  edi
     pop  esi
     pop  edx
     pop  ecx
@@ -139,9 +130,6 @@ PDP_Done:
     ret
 PrintDecPadded ENDP
 
-;=====================================================
-; Helper Procs
-;=====================================================
 FindByID PROC
     push eax
     xor  esi, esi
@@ -213,9 +201,6 @@ ZN_Loop:
     ret
 ZeroName ENDP
 
-;=====================================================
-; AddItem
-;=====================================================
 AddItem PROC C
     pushad
     mov  eax, itemCount
@@ -224,7 +209,6 @@ AddItem PROC C
     mov  edx, OFFSET msgFull
     call WriteString
     jmp  AI_Done
-
 AI_GetID:
     mov  edx, OFFSET msgEnterID
     call WriteString
@@ -243,17 +227,14 @@ AI_DupID:
     mov  edx, OFFSET msgDupID
     call WriteString
     jmp  AI_GetID
-
 AI_IDOk:
     mov  esi, itemCount
     mov  itemIDs[esi*4], ebx
-
     mov  edx, OFFSET msgEnterName
     call WriteString
     mov  edx, OFFSET nameBuf
     mov  ecx, NAME_LEN
     call ReadString
-    
     mov  eax, esi
     call NameOffset
     mov  edi, edx           
@@ -276,7 +257,6 @@ AI_FillNull:
     mov  BYTE PTR [edi], 0
     inc  edi
     loop AI_FillNull
-
 AI_GetQty:
     mov  esi, itemCount
     mov  edx, OFFSET msgEnterQty
@@ -287,6 +267,9 @@ AI_GetQty:
     call WriteString
     call ReadInt
     mov  itemPrice[esi*4], eax
+    
+    mov  itemSold[esi*4], 0  ; <--- Ensure sales start at 0
+    
     inc  itemCount
     mov  edx, OFFSET msgAdded
     call WriteString
@@ -295,9 +278,6 @@ AI_Done:
     ret
 AddItem ENDP
 
-;=====================================================
-; ViewItems 
-;=====================================================
 ViewItems PROC C
     pushad
     mov  eax, itemCount
@@ -306,7 +286,6 @@ ViewItems PROC C
     mov  edx, OFFSET msgViewEmpty
     call WriteString
     jmp  VI_Done
-
 VI_Show:
     mov  edx, OFFSET msgViewHeader
     call WriteString
@@ -347,9 +326,6 @@ VI_Done:
     ret
 ViewItems ENDP
 
-;=====================================================
-; UpdateItem 
-;=====================================================
 UpdateItem PROC C
     pushad
     mov  edx, OFFSET msgUpdHeader
@@ -410,9 +386,6 @@ UI_Done:
     ret
 UpdateItem ENDP
 
-;=====================================================
-; DeleteItem
-;=====================================================
 DeleteItem PROC C
     pushad
     mov  edx, OFFSET msgDelHeader
@@ -440,6 +413,8 @@ DI_Shift:
     mov  itemQty[edi*4], ebx
     mov  ebx, itemPrice[eax*4]
     mov  itemPrice[edi*4], ebx
+    mov  ebx, itemSold[eax*4]    
+    mov  itemSold[edi*4], ebx
     push esi
     mov  esi, eax           
     call CopyName
@@ -452,6 +427,7 @@ DI_ShiftDone:
     mov  itemIDs[eax*4],   0
     mov  itemQty[eax*4],   0
     mov  itemPrice[eax*4], 0
+    mov  itemSold[eax*4],  0     
     call ZeroName           
     dec  itemCount
     mov  edx, OFFSET msgDelOK
